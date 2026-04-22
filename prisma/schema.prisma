@@ -1,0 +1,125 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum AdminRole {
+  ADMIN
+  TEACHER
+}
+
+enum ActionType {
+  CHECKIN
+  CHECKOUT
+  MANUAL_CHECKIN
+  MANUAL_CHECKOUT
+}
+
+enum FinalStatus {
+  PENDING
+  COMPLETED
+  MISSING_CHECKIN
+  MISSING_CHECKOUT
+  CHECKOUT_ONLY
+  ABSENT
+  MANUAL_COMPLETED
+}
+
+model Student {
+  id         String             @id @default(cuid())
+  studentNo  String             @unique
+  name       String
+  grade      Int
+  classNo    Int
+  photoUrl   String?
+  qrToken    String             @unique
+  isActive   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  logs       AttendanceLog[]
+  statuses   AttendanceStatus[]
+  adjustments ManualAdjustment[]
+}
+
+model Event {
+  id                String             @id @default(cuid())
+  title             String
+  eventDate         DateTime
+  checkinStartAt    DateTime
+  checkinEndAt      DateTime
+  checkoutStartAt   DateTime
+  checkoutEndAt     DateTime
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  logs              AttendanceLog[]
+  statuses          AttendanceStatus[]
+  adjustments       ManualAdjustment[]
+
+  @@unique([eventDate, title])
+}
+
+model AttendanceLog {
+  id            String      @id @default(cuid())
+  eventId       String
+  studentId     String?
+  actionType    ActionType
+  scannedAt     DateTime
+  deviceId      String
+  operatorId    String?
+  isValid       Boolean
+  invalidReason String?
+  rawToken      String
+  createdAt     DateTime    @default(now())
+  event         Event       @relation(fields: [eventId], references: [id])
+  student       Student?    @relation(fields: [studentId], references: [id])
+  operator      AdminUser?  @relation(fields: [operatorId], references: [id])
+}
+
+model AttendanceStatus {
+  id               String      @id @default(cuid())
+  eventId          String
+  studentId        String
+  firstCheckinAt   DateTime?
+  firstCheckoutAt  DateTime?
+  finalStatus      FinalStatus @default(PENDING)
+  updatedAt        DateTime    @updatedAt
+  event            Event       @relation(fields: [eventId], references: [id])
+  student          Student     @relation(fields: [studentId], references: [id])
+
+  @@unique([eventId, studentId])
+}
+
+model AdminUser {
+  id          String             @id @default(cuid())
+  name        String
+  email       String             @unique
+  role        AdminRole
+  deviceLabel String?
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  logs        AttendanceLog[]
+  adjustments ManualAdjustment[]
+}
+
+model ManualAdjustment {
+  id          String      @id @default(cuid())
+  eventId     String
+  studentId   String
+  actionType  ActionType
+  reason      String
+  operatorId  String
+  createdAt   DateTime    @default(now())
+  event       Event       @relation(fields: [eventId], references: [id])
+  student     Student     @relation(fields: [studentId], references: [id])
+  operator    AdminUser   @relation(fields: [operatorId], references: [id])
+}
