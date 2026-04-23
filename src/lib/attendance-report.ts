@@ -2,6 +2,7 @@ import { FinalStatus } from "@/lib/attendance";
 
 export type DashboardFilters = {
   status?: string;
+  grade?: string;
   classNo?: string;
   q?: string;
 };
@@ -9,13 +10,14 @@ export type DashboardFilters = {
 export function normalizeFilterInput(filters: DashboardFilters) {
   return {
     status: filters.status?.trim().toUpperCase() || "",
+    grade: filters.grade?.trim() || "",
     classNo: filters.classNo?.trim() || "",
     q: filters.q?.trim().toLowerCase() || "",
   };
 }
 
 export function matchesStudentFilter(
-  student: { name: string; studentNo: string; classNo: number },
+  student: { name: string; studentNo: string; grade: number; classNo: number },
   status: FinalStatus,
   filters: DashboardFilters,
 ) {
@@ -23,6 +25,10 @@ export function matchesStudentFilter(
   const textTarget = `${student.name} ${student.studentNo}`.toLowerCase();
 
   if (normalized.status && normalized.status !== status) {
+    return false;
+  }
+
+  if (normalized.grade && String(student.grade) !== normalized.grade) {
     return false;
   }
 

@@ -15,9 +15,12 @@ const statusLabel: Record<FinalStatus, string> = {
   MANUAL_COMPLETED: "수동 완료",
 };
 
+const STATUS_DISPLAY_LIMIT = 30;
+
 function buildQuery(filters: DashboardFilters) {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
+  if (filters.grade) params.set("grade", filters.grade);
   if (filters.classNo) params.set("classNo", filters.classNo);
   if (filters.status) params.set("status", filters.status);
   const query = params.toString();
@@ -50,50 +53,73 @@ export default async function HomePage({
   const filteredStatuses = statuses.filter((status) =>
     matchesStudentFilter(status.student, status.finalStatus, filters),
   );
+  const displayedStatuses = filteredStatuses.slice(0, STATUS_DISPLAY_LIMIT);
   const statusByStudentId = new Map(statuses.map((status: (typeof statuses)[number]) => [status.studentId, status]));
   const filteredLogs = recentLogs.filter((log: (typeof recentLogs)[number]) => {
     if (!log.student) {
-      return !filters.q && !filters.classNo && !filters.status;
+      return !filters.q && !filters.grade && !filters.classNo && !filters.status;
     }
 
     const status = statusByStudentId.get(log.student.id)?.finalStatus ?? FinalStatus.PENDING;
     return matchesStudentFilter(log.student, status, filters);
   });
   const exportHref = `/api/export/attendance${buildQuery(filters)}`;
+  const completionRate = metrics.targetCount > 0 ? Math.round((metrics.completedCount / metrics.targetCount) * 100) : 0;
+  const attentionCount = metrics.missingCheckinCount + metrics.missingCheckoutCount;
 
   return (
     <main className="shell">
       <AutoRefresh interval={5000} />
-      <section className="hero">
-        <div>
+      <section className="hero command-hero">
+        <div className="hero-copy">
           <p className="eyebrow">Event Control Room</p>
           <h1>오예스 출결 웹 시스템</h1>
           <p className="muted">
             행사 당일 체크인, 체크아웃, 예외 처리, QR 재발급, 로그 추적까지 한 화면 흐름으로 운영할 수
             있도록 정리한 출결 대시보드입니다.
           </p>
-          <div className="badge-row hero-badges">
-            <span className="badge">실시간 현황 반영</span>
-            <span className="badge">QR 스캔 운영</span>
-            <span className="badge">운영 로그 추적</span>
+          <div className="hero-status-strip">
+            <span>{formatDate(event.eventDate)}</span>
+            <span>체크인 {formatTime(event.checkinStartAt)} - {formatTime(event.checkinEndAt)}</span>
+            <span>체크아웃 {formatTime(event.checkoutStartAt)} - {formatTime(event.checkoutEndAt)}</span>
           </div>
         </div>
-        <div className="hero-actions">
-          <Link className="primary-button" href="/teacher/check-in">
-            체크인 스캔 화면
-          </Link>
-          <Link className="secondary-button" href="/teacher/check-out">
-            체크아웃 스캔 화면
-          </Link>
-          <Link className="secondary-button" href="/admin/manual">
-            예외 처리
-          </Link>
-          <Link className="secondary-button" href="/admin/students">
-            명단 업로드
-          </Link>
-          <Link className="secondary-button" href={exportHref}>
-            CSV 다운로드
-          </Link>
+        <div className="command-panel">
+          <div className="command-panel-header">
+            <div>
+              <p className="eyebrow">Live Completion</p>
+              <strong>{completionRate}%</strong>
+            </div>
+            <span className="live-dot">5초 갱신</span>
+          </div>
+          <div className="command-stats">
+            <span>
+              <strong>{metrics.targetCount}</strong>
+              대상
+            </span>
+            <span>
+              <strong>{metrics.completedCount}</strong>
+              완료
+            </span>
+            <span>
+              <strong>{attentionCount}</strong>
+              확인 필요
+            </span>
+          </div>
+          <div className="hero-actions command-actions">
+            <Link className="primary-button" href="/teacher/check-in">
+              체크인 스캔
+            </Link>
+            <Link className="primary-button" href="/teacher/check-out">
+              체크아웃 스캔
+            </Link>
+            <Link className="secondary-button" href="/admin/manual">
+              예외 처리
+            </Link>
+            <Link className="secondary-button" href={exportHref}>
+              CSV 다운로드
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -102,6 +128,10 @@ export default async function HomePage({
           <label className="input-block">
             <span>검색</span>
             <input name="q" defaultValue={filters.q ?? ""} placeholder="이름 또는 학번" />
+          </label>
+          <label className="input-block">
+            <span>학년</span>
+            <input name="grade" defaultValue={filters.grade ?? ""} placeholder="예: 2" />
           </label>
           <label className="input-block">
             <span>반</span>
@@ -133,7 +163,7 @@ export default async function HomePage({
       <section className="panel">
         <div className="section-header">
           <div>
-            <p className="eyebrow">오늘 행사</p>
+            <p className="eyebrow">Mission Metrics</p>
             <h2>{event.title}</h2>
           </div>
           <div className="badge-row">
@@ -144,7 +174,7 @@ export default async function HomePage({
         </div>
 
         <div className="metric-grid">
-          <DashboardCard label="대상 학생" value={metrics.targetCount} />
+          <DashboardCard label="출석 대상" value={metrics.targetCount} />
           <DashboardCard label="체크인 완료" value={metrics.checkinCount} tone="accent" />
           <DashboardCard label="체크아웃 완료" value={metrics.checkoutCount} tone="accent" />
           <DashboardCard label="최종 완료" value={metrics.completedCount} tone="accent" />
@@ -159,6 +189,9 @@ export default async function HomePage({
             <div>
               <p className="eyebrow">실시간 상태</p>
               <h2>학생별 진행 현황</h2>
+              <p className="muted">
+                필터 결과 {filteredStatuses.length}명 중 {displayedStatuses.length}명 표시
+              </p>
             </div>
           </div>
           <div className="table-wrap">
@@ -167,16 +200,20 @@ export default async function HomePage({
                 <tr>
                   <th>학생</th>
                   <th>학번</th>
+                  <th>학년/반</th>
                   <th>체크인</th>
                   <th>체크아웃</th>
                   <th>상태</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredStatuses.map((status: (typeof filteredStatuses)[number]) => (
+                {displayedStatuses.map((status: (typeof displayedStatuses)[number]) => (
                   <tr key={status.id}>
                     <td>{status.student.name}</td>
                     <td>{status.student.studentNo}</td>
+                    <td>
+                      {status.student.grade}학년 {status.student.classNo}반
+                    </td>
                     <td>{formatTime(status.firstCheckinAt)}</td>
                     <td>{formatTime(status.firstCheckoutAt)}</td>
                     <td>
@@ -189,6 +226,12 @@ export default async function HomePage({
               </tbody>
             </table>
           </div>
+          {filteredStatuses.length > STATUS_DISPLAY_LIMIT ? (
+            <p className="muted table-note">
+              전체 명단을 모두 펼치지 않습니다. 학년/반/상태 필터로 좁히거나 CSV 다운로드로 전체 결과를 확인하세요.
+            </p>
+          ) : null}
+          {displayedStatuses.length === 0 ? <p className="muted table-note">필터에 맞는 학생이 없습니다.</p> : null}
         </section>
 
         <section className="panel">

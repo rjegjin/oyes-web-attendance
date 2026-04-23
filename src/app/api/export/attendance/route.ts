@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const filters: DashboardFilters = {
     q: url.searchParams.get("q") ?? "",
+    grade: url.searchParams.get("grade") ?? "",
     classNo: url.searchParams.get("classNo") ?? "",
     status: url.searchParams.get("status") ?? "",
   };

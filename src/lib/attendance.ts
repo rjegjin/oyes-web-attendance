@@ -362,7 +362,7 @@ export async function getDashboardSnapshot() {
     prisma.attendanceStatus.findMany({
       where: { eventId: event.id },
       include: { student: true },
-      orderBy: [{ student: { classNo: "asc" } }, { student: { name: "asc" } }],
+      orderBy: [{ student: { grade: "asc" } }, { student: { classNo: "asc" } }, { student: { name: "asc" } }],
     }),
     prisma.attendanceLog.findMany({
       where: { eventId: event.id },

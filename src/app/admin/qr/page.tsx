@@ -2,10 +2,12 @@ import Link from "next/link";
 import QRCode from "react-qr-code";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatTime } from "@/lib/time";
+import { QrFilterForm } from "./filter-form";
 import { PrintButton } from "./print-button";
 
 type QrPageParams = {
   q?: string;
+  grade?: string;
   classNo?: string;
   status?: string;
   message?: string;
@@ -18,23 +20,46 @@ export default async function QRPrintPage({
 }) {
   const params = (await searchParams) ?? {};
   const q = params.q?.trim() ?? "";
+  const grade = params.grade?.trim() ?? "";
   const classNo = params.classNo?.trim() ?? "";
+  const selectedGrade = grade ? Number(grade) || undefined : undefined;
+  const selectedClassNo = classNo ? Number(classNo) || undefined : undefined;
 
-  const students = await prisma.student.findMany({
-    where: {
-      isActive: true,
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q } },
-              { studentNo: { contains: q } },
-            ],
-          }
-        : {}),
-      ...(classNo ? { classNo: Number(classNo) || undefined } : {}),
+  const classRoster = await prisma.student.findMany({
+    where: { isActive: true },
+    select: {
+      grade: true,
+      classNo: true,
     },
-    orderBy: [{ grade: "asc" }, { classNo: "asc" }, { name: "asc" }],
+    distinct: ["grade", "classNo"],
+    orderBy: [{ grade: "asc" }, { classNo: "asc" }],
   });
+
+  const classOptionsByGrade = classRoster.reduce<Record<string, typeof classRoster>>((groups, item) => {
+    const key = String(item.grade);
+    groups[key] = [...(groups[key] ?? []), item];
+    return groups;
+  }, {});
+  const shouldLoadStudents = Boolean(q || (selectedGrade && selectedClassNo));
+
+  const students = shouldLoadStudents
+    ? await prisma.student.findMany({
+        where: {
+          isActive: true,
+          ...(q
+            ? {
+                OR: [
+                  { name: { contains: q } },
+                  { studentNo: { contains: q } },
+                ],
+              }
+            : {}),
+          ...(selectedGrade ? { grade: selectedGrade } : {}),
+          ...(selectedClassNo ? { classNo: selectedClassNo } : {}),
+        },
+        orderBy: [{ grade: "asc" }, { classNo: "asc" }, { name: "asc" }],
+      })
+    : [];
 
   const recentIssues = await prisma.qrIssueLog.findMany({
     include: {
@@ -65,6 +90,10 @@ export default async function QRPrintPage({
           현재 필터에 잡힌 학생만 인쇄합니다. QR 재발급을 누르면 기존 종이는 즉시 무효가 되고, 새 QR만
           유효합니다.
         </p>
+        <p className="muted">
+          기본 상태에서는 전체 1300여 명을 불러오지 않습니다. 학년과 반을 선택하거나, 이름/학번으로
+          검색해서 필요한 학생만 여세요.
+        </p>
 
         {params.message ? (
           <div className={`result-card ${params.status === "ok" ? "result-success" : "result-error"}`}>
@@ -73,29 +102,22 @@ export default async function QRPrintPage({
           </div>
         ) : null}
 
-        <form className="filter-bar" method="get">
-          <label className="input-block">
-            <span>검색</span>
-            <input name="q" defaultValue={q} placeholder="이름 또는 학번" />
-          </label>
-          <label className="input-block">
-            <span>반</span>
-            <input name="classNo" defaultValue={classNo} placeholder="예: 3" />
-          </label>
-          <div className="panel-muted qr-policy-card">
-            <p>재발급 정책: 분실/훼손 시 `QR 재발급` 사용</p>
-            <p>토큰 정책: `QR_TOKEN_SECRET + 학번 + qrVersion` 해시</p>
-            <p>감사 이력: 발급 시각, 버전, 처리자 저장</p>
+        <QrFilterForm q={q} grade={grade} classNo={classNo} classOptionsByGrade={classOptionsByGrade} />
+      </section>
+
+      <section className="panel print-hidden">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">인쇄 대상</p>
+            <h2>{students.length}명 선택됨</h2>
           </div>
-          <div className="button-row filter-actions">
-            <button className="primary-button" type="submit">
-              인쇄 대상 필터
-            </button>
-            <Link className="secondary-button" href="/admin/qr">
-              전체 보기
-            </Link>
-          </div>
-        </form>
+        </div>
+        {!shouldLoadStudents ? (
+          <p className="muted">학년과 반을 선택하거나, 이름/학번 검색으로 필요한 학생만 불러오세요.</p>
+        ) : null}
+        {selectedGrade && !selectedClassNo && !q ? (
+          <p className="muted">{selectedGrade}학년을 선택했습니다. 반까지 선택하면 약 30명 단위로 QR을 인쇄할 수 있습니다.</p>
+        ) : null}
       </section>
 
       <section className="panel print-hidden">
@@ -148,7 +170,7 @@ export default async function QRPrintPage({
               <input
                 name="returnTo"
                 type="hidden"
-                value={`/admin/qr${q || classNo ? `?${new URLSearchParams({ ...(q ? { q } : {}), ...(classNo ? { classNo } : {}) }).toString()}` : ""}`}
+                value={`/admin/qr${q || grade || classNo ? `?${new URLSearchParams({ ...(q ? { q } : {}), ...(grade ? { grade } : {}), ...(classNo ? { classNo } : {}) }).toString()}` : ""}`}
               />
               <button className="secondary-button" type="submit">
                 QR 재발급

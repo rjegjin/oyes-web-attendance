@@ -12,7 +12,7 @@
 
 ## 🛠️ 시스템 아키텍처
 
-- **Frontend/Backend**: Next.js 16 (App Router)
+- **Frontend/Backend**: Next.js 16.2.4 (App Router)
 - **Database**: PostgreSQL (Prisma ORM)
 - **Deployment**: Vercel (Production)
 - **Auth**: Basic Authentication (Security Area 분리)
@@ -40,12 +40,13 @@
 
 명단 업로드 시 아래 4개의 칼럼을 포함한 CSV 파일을 준비해 주세요.
 
-| 학번 | 이름 | 성별 | 사진URL |
+| 학번 | 이름(또는 성명) | 성별 | 사진URL |
 | :--- | :--- | :--- | :--- |
 | 20301 | 홍길동 | 남 | (선택사항) |
 | 31205 | 김민지 | 여 | (선택사항) |
 
 - **학번 자동 분석**: `20301` 입력 시 서버가 자동으로 `2학년 3반`으로 인식합니다.
+- **허용 헤더 별칭**: `이름`, `성명`, `학생명` 모두 사용할 수 있습니다.
 - **데이터 유지**: 한 번 업로드하면 DB에 저장되므로 행사 때마다 올릴 필요가 없습니다.
 
 ---
