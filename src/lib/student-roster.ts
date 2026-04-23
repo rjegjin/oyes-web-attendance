@@ -35,14 +35,14 @@ export type StudentRosterParseResult = {
 
 const HEADER_ALIASES: Record<string, string[]> = {
   studentNo: ["studentno", "학번", "번호"],
-  name: ["name", "이름", "학생명"],
+  name: ["name", "이름", "학생명", "성명"],
   gender: ["gender", "성별", "성"],
   photoUrl: ["photourl", "사진url", "photo"],
 };
 
 export function studentRosterTemplateCsv() {
   return buildCsv([
-    ["학번", "이름", "성별", "사진URL"],
+    ["학번", "성명", "성별", "사진URL"],
     ["20301", "홍길동", "남", ""],
     ["20302", "김민지", "여", ""],
   ]);
@@ -94,7 +94,7 @@ export function parseStudentRosterCsv(csvText: string): StudentRosterParseResult
     indices.name === undefined ||
     indices.gender === undefined
   ) {
-    throw new Error("CSV 헤더는 최소 학번, 이름, 성별을 포함해야 합니다.");
+    throw new Error("CSV 헤더는 최소 학번, 이름(또는 성명), 성별을 포함해야 합니다.");
   }
 
   const roster: StudentRosterRow[] = [];
@@ -112,7 +112,7 @@ export function parseStudentRosterCsv(csvText: string): StudentRosterParseResult
       warnings.push({
         code: "MISSING_REQUIRED_FIELD",
         line,
-        message: `${line}행: 학번, 이름 또는 성별이 비어 있어 건너뜀`,
+        message: `${line}행: 학번, 이름(또는 성명) 또는 성별이 비어 있어 건너뜀`,
       });
       continue;
     }

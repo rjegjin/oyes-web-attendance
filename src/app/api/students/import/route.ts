@@ -33,16 +33,36 @@ export async function POST(request: NextRequest) {
       where: { email: "admin@school.local" },
       select: { id: true },
     });
+    const existingStudents = await prisma.student.findMany({
+      where: {
+        studentNo: {
+          in: parsed.rows.map((row) => row.studentNo),
+        },
+      },
+      select: {
+        id: true,
+        studentNo: true,
+        isActive: true,
+      },
+    });
+    const existingByStudentNo = new Map(
+      existingStudents.map((student: (typeof existingStudents)[number]) => [student.studentNo, student]),
+    );
     let createdCount = 0;
     let updatedCount = 0;
     let reactivatedCount = 0;
 
     await prisma.$transaction(async (tx) => {
+      const qrIssueLogs: Array<{
+        studentId: string;
+        qrToken: string;
+        qrVersion: number;
+        reason: string;
+        operatorId?: string;
+      }> = [];
+
       for (const row of parsed.rows) {
-        const existing = await tx.student.findUnique({
-          where: { studentNo: row.studentNo },
-          select: { id: true, isActive: true },
-        });
+        const existing = existingByStudentNo.get(row.studentNo);
 
         const student = await tx.student.upsert({
           where: { studentNo: row.studentNo },
@@ -77,29 +97,31 @@ export async function POST(request: NextRequest) {
 
         if (!existing) {
           createdCount += 1;
-          await tx.qrIssueLog.create({
-            data: {
-              studentId: student.id,
-              qrToken: student.qrToken,
-              qrVersion: student.qrVersion,
-              reason: "명단 업로드 초기 발급",
-              operatorId: operator?.id,
-            },
+          qrIssueLogs.push({
+            studentId: student.id,
+            qrToken: student.qrToken,
+            qrVersion: student.qrVersion,
+            reason: "명단 업로드 초기 발급",
+            ...(operator?.id ? { operatorId: operator.id } : {}),
           });
         } else if (!existing.isActive) {
           reactivatedCount += 1;
-          await tx.qrIssueLog.create({
-            data: {
-              studentId: student.id,
-              qrToken: student.qrToken,
-              qrVersion: student.qrVersion,
-              reason: "재활성화 후 QR 재발급",
-              operatorId: operator?.id,
-            },
+          qrIssueLogs.push({
+            studentId: student.id,
+            qrToken: student.qrToken,
+            qrVersion: student.qrVersion,
+            reason: "재활성화 후 QR 재발급",
+            ...(operator?.id ? { operatorId: operator.id } : {}),
           });
         } else {
           updatedCount += 1;
         }
+      }
+
+      if (qrIssueLogs.length > 0) {
+        await tx.qrIssueLog.createMany({
+          data: qrIssueLogs,
+        });
       }
 
       if (event) {
@@ -123,6 +145,9 @@ export async function POST(request: NextRequest) {
           });
         }
       }
+    }, {
+      maxWait: 10000,
+      timeout: 20000,
     });
 
     const url = new URL("/admin/students", request.url);
