@@ -15,6 +15,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:bootstrap": "tsx prisma/bootstrap.ts",
+    "students:import": "tsx scripts/import-students.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },
