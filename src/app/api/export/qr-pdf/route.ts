@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
 import path from "node:path";
+import { PassThrough, Readable } from "node:stream";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type PdfStudent = {
   studentNo: string;
@@ -14,15 +14,6 @@ type PdfStudent = {
   classNo: number;
   qrToken: string;
 };
-
-function collectPdfBuffer(doc: PDFKit.PDFDocument) {
-  return new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-  });
-}
 
 function drawQrMatrix(doc: PDFKit.PDFDocument, value: string, x: number, y: number, size: number) {
   const qr = QRCode.create(value, { errorCorrectionLevel: "M" });
@@ -103,9 +94,11 @@ export async function GET() {
       Author: "OYES Attendance",
     },
   });
-  const pdfBufferPromise = collectPdfBuffer(doc);
   const fontPath = path.join(process.cwd(), "public", "fonts", "DroidSansFallbackFull.ttf");
   doc.registerFont("Korean", fontPath);
+
+  const output = new PassThrough();
+  doc.pipe(output);
 
   const columns = 3;
   const rows = 5;
@@ -131,9 +124,10 @@ export async function GET() {
   });
 
   doc.end();
-  const pdfBuffer = await pdfBufferPromise;
 
-  return new NextResponse(new Uint8Array(pdfBuffer), {
+  const body = Readable.toWeb(output) as unknown as BodyInit;
+
+  return new Response(body, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",

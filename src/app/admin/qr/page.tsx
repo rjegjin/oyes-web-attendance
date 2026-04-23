@@ -76,7 +76,6 @@ export default async function QRPrintPage({
         <Link href="/">대시보드</Link>
         <Link href="/admin/manual">수동 처리</Link>
         <Link href="/admin/students">명단 업로드</Link>
-        <Link href="/api/export/qr-pdf">전체 QR PDF 다운로드</Link>
       </div>
 
       <section className="panel print-hidden">
@@ -85,7 +84,12 @@ export default async function QRPrintPage({
             <p className="eyebrow">QR 코드 출력</p>
             <h1>학생용 QR 코드 인쇄 및 재발급</h1>
           </div>
-          <PrintButton />
+          <div className="button-row">
+            <Link className="secondary-button" href="/api/export/qr-pdf">
+              전체 QR 다운로드
+            </Link>
+            <PrintButton />
+          </div>
         </div>
         <p className="muted">
           현재 필터에 잡힌 학생만 인쇄합니다. QR 재발급을 누르면 기존 종이는 즉시 무효가 되고, 새 QR만
@@ -95,10 +99,7 @@ export default async function QRPrintPage({
           기본 상태에서는 전체 1300여 명을 불러오지 않습니다. 학년과 반을 선택하거나, 이름/학번으로
           검색해서 필요한 학생만 여세요.
         </p>
-        <p className="muted">
-          전교생 QR을 한 번에 인쇄할 때는 <Link className="text-link" href="/api/export/qr-pdf">전체 QR PDF 다운로드</Link>를
-          사용하세요. 화면에 미리 띄우지 않고 파일로 바로 내려받습니다.
-        </p>
+        <p className="muted">전체 QR 다운로드는 PDF로 스트리밍 생성합니다. 실패하면 학년과 반을 나눠 다시 시도하세요.</p>
 
         {params.message ? (
           <div className={`result-card ${params.status === "ok" ? "result-success" : "result-error"}`}>
