@@ -28,6 +28,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       token: payload.data.token,
       deviceId: payload.data.deviceId,
       operatorEmail: payload.data.operatorEmail,
+      capturedAt: payload.data.capturedAt ? new Date(payload.data.capturedAt) : undefined,
     });
 
     return NextResponse.json({

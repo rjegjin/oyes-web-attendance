@@ -8,7 +8,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum AdminRole {
@@ -34,19 +34,22 @@ enum FinalStatus {
 }
 
 model Student {
-  id         String             @id @default(cuid())
-  studentNo  String             @unique
-  name       String
-  grade      Int
-  classNo    Int
-  photoUrl   String?
-  qrToken    String             @unique
-  isActive   Boolean            @default(true)
-  createdAt  DateTime           @default(now())
-  updatedAt  DateTime           @updatedAt
-  logs       AttendanceLog[]
-  statuses   AttendanceStatus[]
-  adjustments ManualAdjustment[]
+  id           String             @id @default(cuid())
+  studentNo    String             @unique
+  name         String
+  grade        Int
+  classNo      Int
+  photoUrl     String?
+  qrToken      String             @unique
+  qrVersion    Int                @default(1)
+  qrIssuedAt   DateTime           @default(now())
+  isActive     Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  logs         AttendanceLog[]
+  statuses     AttendanceStatus[]
+  adjustments  ManualAdjustment[]
+  qrIssueLogs  QrIssueLog[]
 }
 
 model Event {
@@ -99,16 +102,17 @@ model AttendanceStatus {
 }
 
 model AdminUser {
-  id          String             @id @default(cuid())
-  name        String
-  email       String             @unique
-  role        AdminRole
-  deviceLabel String?
-  isActive    Boolean            @default(true)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  logs        AttendanceLog[]
-  adjustments ManualAdjustment[]
+  id           String             @id @default(cuid())
+  name         String
+  email        String             @unique
+  role         AdminRole
+  deviceLabel  String?
+  isActive     Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  logs         AttendanceLog[]
+  adjustments  ManualAdjustment[]
+  qrIssueLogs  QrIssueLog[]
 }
 
 model ManualAdjustment {
@@ -122,4 +126,16 @@ model ManualAdjustment {
   event       Event       @relation(fields: [eventId], references: [id])
   student     Student     @relation(fields: [studentId], references: [id])
   operator    AdminUser   @relation(fields: [operatorId], references: [id])
+}
+
+model QrIssueLog {
+  id          String     @id @default(cuid())
+  studentId   String
+  qrToken     String     @unique
+  qrVersion   Int
+  reason      String?
+  operatorId  String?
+  issuedAt    DateTime   @default(now())
+  student     Student    @relation(fields: [studentId], references: [id])
+  operator    AdminUser? @relation(fields: [operatorId], references: [id])
 }

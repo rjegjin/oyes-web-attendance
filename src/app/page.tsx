@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { FinalStatus } from "@prisma/client";
 import { DashboardCard } from "@/components/dashboard-card";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { getDashboardSnapshot } from "@/lib/attendance";
+import { getDashboardSnapshot, FinalStatus } from "@/lib/attendance";
+import { matchesStudentFilter, type DashboardFilters } from "@/lib/attendance-report";
 import { formatDate, formatTime } from "@/lib/time";
 
 const statusLabel: Record<FinalStatus, string> = {
@@ -15,7 +15,21 @@ const statusLabel: Record<FinalStatus, string> = {
   MANUAL_COMPLETED: "수동 완료",
 };
 
-export default async function HomePage() {
+function buildQuery(filters: DashboardFilters) {
+  const params = new URLSearchParams();
+  if (filters.q) params.set("q", filters.q);
+  if (filters.classNo) params.set("classNo", filters.classNo);
+  if (filters.status) params.set("status", filters.status);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: Promise<DashboardFilters | undefined>;
+}) {
+  const filters: DashboardFilters = (await searchParams) ?? {};
   const snapshot = await getDashboardSnapshot();
 
   if (!snapshot) {
@@ -33,6 +47,19 @@ export default async function HomePage() {
   }
 
   const { event, statuses, recentLogs, metrics } = snapshot;
+  const filteredStatuses = statuses.filter((status) =>
+    matchesStudentFilter(status.student, status.finalStatus, filters),
+  );
+  const statusByStudentId = new Map(statuses.map((status: (typeof statuses)[number]) => [status.studentId, status]));
+  const filteredLogs = recentLogs.filter((log: (typeof recentLogs)[number]) => {
+    if (!log.student) {
+      return !filters.q && !filters.classNo && !filters.status;
+    }
+
+    const status = statusByStudentId.get(log.student.id)?.finalStatus ?? FinalStatus.PENDING;
+    return matchesStudentFilter(log.student, status, filters);
+  });
+  const exportHref = `/api/export/attendance${buildQuery(filters)}`;
 
   return (
     <main className="shell">
@@ -56,7 +83,46 @@ export default async function HomePage() {
           <Link className="secondary-button" href="/admin/manual">
             예외 처리
           </Link>
+          <Link className="secondary-button" href="/admin/students">
+            명단 업로드
+          </Link>
+          <Link className="secondary-button" href={exportHref}>
+            CSV 다운로드
+          </Link>
         </div>
+      </section>
+
+      <section className="panel">
+        <form className="filter-bar" method="get">
+          <label className="input-block">
+            <span>검색</span>
+            <input name="q" defaultValue={filters.q ?? ""} placeholder="이름 또는 학번" />
+          </label>
+          <label className="input-block">
+            <span>반</span>
+            <input name="classNo" defaultValue={filters.classNo ?? ""} placeholder="예: 3" />
+          </label>
+          <label className="input-block">
+            <span>상태</span>
+            <select name="status" defaultValue={filters.status ?? ""}>
+              <option value="">전체</option>
+              <option value="COMPLETED">완료</option>
+              <option value="MISSING_CHECKOUT">체크아웃 누락</option>
+              <option value="MISSING_CHECKIN">체크인 누락</option>
+              <option value="CHECKOUT_ONLY">체크아웃만 존재</option>
+              <option value="ABSENT">미참여</option>
+              <option value="MANUAL_COMPLETED">수동 완료</option>
+            </select>
+          </label>
+          <div className="button-row filter-actions">
+            <button className="primary-button" type="submit">
+              필터 적용
+            </button>
+            <Link className="secondary-button" href="/">
+              초기화
+            </Link>
+          </div>
+        </form>
       </section>
 
       <section className="panel">
@@ -102,7 +168,7 @@ export default async function HomePage() {
                 </tr>
               </thead>
               <tbody>
-                {statuses.map((status) => (
+                {filteredStatuses.map((status: (typeof filteredStatuses)[number]) => (
                   <tr key={status.id}>
                     <td>{status.student.name}</td>
                     <td>{status.student.studentNo}</td>
@@ -128,7 +194,7 @@ export default async function HomePage() {
             </div>
           </div>
           <div className="log-list">
-            {recentLogs.map((log) => (
+            {filteredLogs.map((log: (typeof filteredLogs)[number]) => (
               <article className="log-item" key={log.id}>
                 <div>
                   <p className="log-title">
@@ -143,6 +209,7 @@ export default async function HomePage() {
                 </span>
               </article>
             ))}
+            {filteredLogs.length === 0 ? <p className="muted">필터에 맞는 로그가 없습니다.</p> : null}
           </div>
         </section>
       </section>

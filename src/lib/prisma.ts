@@ -1,12 +1,12 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 declare global {
   var prisma: PrismaClient | undefined;
 }
 
-const adapter = new PrismaLibSql({
-  url: process.env.DATABASE_URL ?? "file:./dev.db",
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL ?? "postgresql://oyes:oyes@localhost:55432/oyes_attendance?schema=public",
 });
 
 export const prisma =

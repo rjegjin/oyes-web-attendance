@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { ManualAdjustmentFeed } from "@/components/recent-scan-feed";
+import { getManualAdjustments } from "@/lib/attendance";
 import { prisma } from "@/lib/prisma";
 
 export default async function ManualPage({
@@ -7,11 +9,14 @@ export default async function ManualPage({
   searchParams?: Promise<{ status?: string; message?: string }>;
 }) {
   const params = searchParams ? await searchParams : undefined;
-  const students = await prisma.student.findMany({
-    where: { isActive: true },
-    orderBy: [{ classNo: "asc" }, { name: "asc" }],
-    take: 12,
-  });
+  const [students, adjustments] = await Promise.all([
+    prisma.student.findMany({
+      where: { isActive: true },
+      orderBy: [{ classNo: "asc" }, { name: "asc" }],
+      take: 12,
+    }),
+    getManualAdjustments(10),
+  ]);
 
   return (
     <main className="shell">
@@ -19,6 +24,8 @@ export default async function ManualPage({
         <Link href="/">대시보드</Link>
         <Link href="/teacher/check-in">체크인 화면</Link>
         <Link href="/teacher/check-out">체크아웃 화면</Link>
+        <Link href="/admin/students">명단 업로드</Link>
+        <Link href="/admin/logs">운영 로그</Link>
       </div>
 
       <section className="panel panel-tight">
@@ -87,7 +94,7 @@ export default async function ManualPage({
               </tr>
             </thead>
             <tbody>
-              {students.map((student) => (
+              {students.map((student: (typeof students)[number]) => (
                 <tr key={student.id}>
                   <td>{student.name}</td>
                   <td>{student.studentNo}</td>
@@ -102,6 +109,8 @@ export default async function ManualPage({
         </div>
         <p className="muted">체크인 가능 시간 밖이면 수동 처리만 허용됩니다. 현재 브라우저 시각 기준으로 동작합니다.</p>
       </section>
+
+      <ManualAdjustmentFeed adjustments={adjustments} />
     </main>
   );
 }

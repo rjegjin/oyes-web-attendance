@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { FormEvent, useState, useTransition, useRef, useEffect } from "react";
+import { FormEvent, useEffect, useEffectEvent, useRef, useState, useTransition } from "react";
 import { Scanner } from "@yudiel/react-qr-scanner";
 
 type ScanPanelProps = {
@@ -27,6 +27,21 @@ type ScanResult = {
   };
 };
 
+type ScanRequestPayload = {
+  token: string;
+  deviceId: string;
+  operatorEmail: string;
+  capturedAt: string;
+};
+
+type QueuedScan = ScanRequestPayload & {
+  id: string;
+  action: "checkin" | "checkout";
+  queuedAt: string;
+};
+
+const PENDING_QUEUE_KEY = "oyes-pending-scans-v1";
+
 export function ScanPanel({
   action,
   title,
@@ -39,6 +54,8 @@ export function ScanPanel({
   const [result, setResult] = useState<ScanResult | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [queuedCount, setQueuedCount] = useState(() => readQueue().length);
+  const [isRetrying, setIsRetrying] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // USB HID 스캐너를 위한 자동 포커스 유지
@@ -48,35 +65,146 @@ export function ScanPanel({
     }
   }, [isCameraOpen, result, isPending]);
 
-  async function processToken(scannedToken: string) {
-    if (isPending) return;
+  const handleOnline = useEffectEvent(() => {
+    void flushQueue();
+  });
 
-    setResult(null);
+  useEffect(() => {
+    function onOnline() {
+      handleOnline();
+    }
+
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, []);
+
+  async function submitScan(payload: ScanRequestPayload) {
     const response = await fetch(`/api/scan/${action}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: scannedToken,
-        deviceId,
-        operatorEmail,
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = (await response.json()) as ScanResult;
-    setResult(data);
+    return { response, data };
+  }
 
-    if (data.ok) {
-      setToken("");
+  async function processToken(scannedToken: string) {
+    if (isPending || isRetrying) return;
+
+    const payload: ScanRequestPayload = {
+      token: scannedToken,
+      deviceId,
+      operatorEmail,
+      capturedAt: new Date().toISOString(),
+    };
+
+    setResult(null);
+
+    if (!navigator.onLine) {
+      enqueueScan({ ...payload, action });
+      setQueuedCount(readQueue().length);
+      setResult({
+        ok: false,
+        code: "QUEUED_OFFLINE",
+        message: "오프라인 상태라 로컬 큐에 저장했습니다. 연결 복구 후 재전송하세요.",
+      });
+      return;
+    }
+
+    try {
+      const { response, data } = await submitScan(payload);
+
+      if (!response.ok && data.code === "SERVER_ERROR") {
+        enqueueScan({ ...payload, action });
+        setQueuedCount(readQueue().length);
+        setResult({
+          ok: false,
+          code: "QUEUED_SERVER_ERROR",
+          message: "서버 응답이 불안정하여 로컬 큐에 저장했습니다. 잠시 뒤 재전송하세요.",
+        });
+        return;
+      }
+
+      setResult(data);
+
+      if (data.ok) {
+        setToken("");
+        startTransition(() => {
+          router.refresh();
+        });
+      }
+    } catch {
+      enqueueScan({ ...payload, action });
+      setQueuedCount(readQueue().length);
+      setResult({
+        ok: false,
+        code: "QUEUED_NETWORK_ERROR",
+        message: "네트워크 오류로 로컬 큐에 저장했습니다. 연결 복구 후 재전송하세요.",
+      });
+    } finally {
+      if (isCameraOpen) {
+        setTimeout(() => setIsCameraOpen(false), 1200);
+      }
+    }
+  }
+
+  async function flushQueue() {
+    const queuedItems = readQueue().filter((item) => item.action === action);
+    if (queuedItems.length === 0) {
+      return;
+    }
+
+    setIsRetrying(true);
+    const remaining: QueuedScan[] = [];
+    let processedCount = 0;
+    let lastData: ScanResult | null = null;
+
+    for (const item of queuedItems) {
+      try {
+        const { response, data } = await submitScan({
+          token: item.token,
+          deviceId: item.deviceId,
+          operatorEmail: item.operatorEmail,
+          capturedAt: item.capturedAt,
+        });
+
+        if (!response.ok && data.code === "SERVER_ERROR") {
+          remaining.push(item);
+          continue;
+        }
+
+        processedCount += 1;
+        lastData = data;
+      } catch {
+        remaining.push(item);
+      }
+    }
+
+    const otherActionItems = readQueue().filter((item) => item.action !== action);
+    writeQueue([...otherActionItems, ...remaining]);
+    setQueuedCount(readQueue().length);
+
+    if (processedCount > 0) {
+      setResult(
+        lastData ?? {
+          ok: true,
+          code: "RETRY_COMPLETED",
+          message: `${processedCount}건의 대기 스캔을 재전송했습니다.`,
+        },
+      );
       startTransition(() => {
         router.refresh();
       });
+    } else if (remaining.length > 0) {
+      setResult({
+        ok: false,
+        code: "RETRY_PENDING",
+        message: `재전송 대기 ${remaining.length}건이 남아 있습니다.`,
+      });
     }
-    
-    // 카메라 스캔 시 입력창을 비워주고 포커스
-    if (isCameraOpen) {
-      // 스캔이 너무 빨리 중복으로 처리되는 것을 방지하기 위해 잠시 대기
-      setTimeout(() => setIsCameraOpen(false), 2000); 
-    }
+
+    setIsRetrying(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -100,13 +228,18 @@ export function ScanPanel({
       </div>
 
       <p className="muted">{subtitle}</p>
+      <div className="badge-row" style={{ marginBottom: "16px" }}>
+        <span className="badge">대기 재전송 {queuedCount}건</span>
+        <button className="secondary-button" type="button" disabled={queuedCount === 0 || isRetrying} onClick={() => void flushQueue()}>
+          {isRetrying ? "재전송 중..." : "대기 스캔 재전송"}
+        </button>
+      </div>
 
       {isCameraOpen ? (
         <div style={{ margin: "20px 0", borderRadius: "16px", overflow: "hidden" }}>
           <Scanner
             onScan={(detected) => {
               if (detected && detected.length > 0) {
-                // 첫 번째 감지된 값 사용
                 processToken(detected[0].rawValue);
               }
             }}
@@ -114,8 +247,8 @@ export function ScanPanel({
               console.error(error);
             }}
           />
-          <button 
-            className="secondary-button" 
+          <button
+            className="secondary-button"
             style={{ width: "100%", marginTop: "12px" }}
             onClick={() => setIsCameraOpen(false)}
           >
@@ -124,8 +257,8 @@ export function ScanPanel({
         </div>
       ) : (
         <div style={{ marginBottom: "20px" }}>
-          <button 
-            className="secondary-button" 
+          <button
+            className="secondary-button"
             onClick={() => setIsCameraOpen(true)}
           >
             카메라로 스캔하기
@@ -143,11 +276,10 @@ export function ScanPanel({
             onChange={(event) => setToken(event.target.value)}
             onBlur={() => {
               if (!isCameraOpen) {
-                // 약간의 지연 후 다시 포커스
                 setTimeout(() => inputRef.current?.focus(), 100);
               }
             }}
-            placeholder="예: OY26-3-01-AB12CD 또는 2026301"
+            placeholder="예: OY-1A2B3C4D5E6F7A8B 또는 2026301"
             disabled={isCameraOpen}
           />
         </label>
@@ -177,4 +309,45 @@ export function ScanPanel({
       ) : null}
     </section>
   );
+}
+
+function readQueue() {
+  if (typeof window === "undefined") {
+    return [] as QueuedScan[];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(PENDING_QUEUE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as QueuedScan[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeQueue(items: QueuedScan[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(items));
+}
+
+function enqueueScan(payload: ScanRequestPayload & { action?: "checkin" | "checkout" }) {
+  const current = readQueue();
+  const nextItem: QueuedScan = {
+    id: crypto.randomUUID(),
+    action: payload.action ?? "checkin",
+    token: payload.token,
+    deviceId: payload.deviceId,
+    operatorEmail: payload.operatorEmail,
+    capturedAt: payload.capturedAt,
+    queuedAt: new Date().toISOString(),
+  };
+
+  writeQueue([...current, nextItem]);
 }

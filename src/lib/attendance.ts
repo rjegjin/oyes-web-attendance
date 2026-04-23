@@ -1,10 +1,46 @@
-import { ActionType, FinalStatus, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+
+export const ActionType = {
+  CHECKIN: "CHECKIN",
+  CHECKOUT: "CHECKOUT",
+  MANUAL_CHECKIN: "MANUAL_CHECKIN",
+  MANUAL_CHECKOUT: "MANUAL_CHECKOUT",
+} as const;
+export type ActionType = typeof ActionType[keyof typeof ActionType];
+
+export const AdminRole = {
+  ADMIN: "ADMIN",
+  TEACHER: "TEACHER",
+} as const;
+export type AdminRole = typeof AdminRole[keyof typeof AdminRole];
+
+export const FinalStatus = {
+  PENDING: "PENDING",
+  COMPLETED: "COMPLETED",
+  MISSING_CHECKIN: "MISSING_CHECKIN",
+  MISSING_CHECKOUT: "MISSING_CHECKOUT",
+  CHECKOUT_ONLY: "CHECKOUT_ONLY",
+  ABSENT: "ABSENT",
+  MANUAL_COMPLETED: "MANUAL_COMPLETED",
+} as const;
+export type FinalStatus = typeof FinalStatus[keyof typeof FinalStatus];
 import { prisma } from "@/lib/prisma";
 import { isWithinWindow } from "@/lib/time";
 
 export const DEFAULT_OPERATOR_EMAIL = "teacher1@school.local";
+export const OPERATOR_DEVICE_RULES: Record<string, string[]> = {
+  "teacher1@school.local": ["gate-a-01"],
+  "teacher2@school.local": ["gate-b-01"],
+  "admin@school.local": ["manual-desk-01"],
+};
 
 export type ScanAction = "checkin" | "checkout";
+export type OperationFilters = {
+  q?: string;
+  classNo?: string;
+  validity?: string;
+  actionType?: string;
+};
 
 export function mapActionToEnum(action: ScanAction, manual = false) {
   if (action === "checkin") {
@@ -15,19 +51,12 @@ export function mapActionToEnum(action: ScanAction, manual = false) {
 }
 
 export async function getTodayEvent() {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  
-  const endOfDay = new Date();
-  endOfDay.setHours(23, 59, 59, 999);
-
   return prisma.event.findFirst({
     where: {
-      eventDate: {
-        gte: startOfDay,
-        lte: endOfDay,
-      },
       isActive: true,
+    },
+    orderBy: {
+      eventDate: "desc",
     },
   });
 }
@@ -96,6 +125,7 @@ export async function processScan({
   token,
   deviceId,
   operatorEmail = DEFAULT_OPERATOR_EMAIL,
+  capturedAt,
   manual = false,
   reason,
 }: {
@@ -103,6 +133,7 @@ export async function processScan({
   token: string;
   deviceId: string;
   operatorEmail?: string;
+  capturedAt?: Date;
   manual?: boolean;
   reason?: string;
 }) {
@@ -117,8 +148,21 @@ export async function processScan({
     where: { email: operatorEmail },
   });
 
-  if (!operator) {
+  if (!operator || !operator.isActive) {
     throw new Error("운영자 계정을 찾을 수 없습니다.");
+  }
+
+  if (manual && operator.role !== AdminRole.ADMIN) {
+    throw new Error("수동 처리 권한이 없는 운영자입니다.");
+  }
+
+  const allowedDeviceIds = OPERATOR_DEVICE_RULES[operator.email] ?? [];
+  if (allowedDeviceIds.length > 0 && !allowedDeviceIds.includes(deviceId)) {
+    throw new Error(`허용되지 않은 기기입니다. ${operator.email}은(는) ${allowedDeviceIds.join(", ")}에서만 사용할 수 있습니다.`);
+  }
+
+  if (!manual && operator.role !== AdminRole.ADMIN && operator.role !== AdminRole.TEACHER) {
+    throw new Error("스캔 권한이 없는 운영자입니다.");
   }
 
   const student = await prisma.student.findFirst({
@@ -128,7 +172,8 @@ export async function processScan({
     },
   });
 
-  const scannedAt = new Date();
+  const requestReceivedAt = new Date();
+  const scannedAt = resolveScannedAt(capturedAt, requestReceivedAt);
   const type = mapActionToEnum(action, manual);
 
   if (!student) {
@@ -266,6 +311,21 @@ export async function processScan({
   };
 }
 
+function resolveScannedAt(capturedAt: Date | undefined, fallback: Date) {
+  if (!capturedAt || Number.isNaN(capturedAt.getTime())) {
+    return fallback;
+  }
+
+  const diffMs = Math.abs(fallback.getTime() - capturedAt.getTime());
+  const maxAcceptedDriftMs = 1000 * 60 * 120;
+
+  if (diffMs > maxAcceptedDriftMs) {
+    return fallback;
+  }
+
+  return capturedAt;
+}
+
 export async function getDashboardSnapshot() {
   const event = await getTodayEvent();
 
@@ -308,7 +368,7 @@ export async function getDashboardSnapshot() {
       where: { eventId: event.id },
       include: { student: true, operator: true },
       orderBy: { scannedAt: "desc" },
-      take: 10,
+      take: 30,
     }),
   ]);
 
@@ -326,4 +386,130 @@ export async function getDashboardSnapshot() {
   };
 
   return { event, students, statuses, recentLogs, metrics };
+}
+
+export async function getRecentScanLogs(action: ScanAction, limit = 8) {
+  const event = await getTodayEvent();
+
+  if (!event) {
+    return [];
+  }
+
+  const actionType = action === "checkin" ? ActionType.CHECKIN : ActionType.CHECKOUT;
+
+  return prisma.attendanceLog.findMany({
+    where: {
+      eventId: event.id,
+      actionType,
+    },
+    include: {
+      student: true,
+      operator: true,
+    },
+    orderBy: { scannedAt: "desc" },
+    take: limit,
+  });
+}
+
+export async function getManualAdjustments(limit = 12) {
+  const event = await getTodayEvent();
+
+  if (!event) {
+    return [];
+  }
+
+  return prisma.manualAdjustment.findMany({
+    where: { eventId: event.id },
+    include: {
+      student: true,
+      operator: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+}
+
+export async function getOperationSnapshot(filters: OperationFilters) {
+  const event = await getTodayEvent();
+
+  if (!event) {
+    return null;
+  }
+
+  const normalizedQ = filters.q?.trim() ?? "";
+  const classNo = filters.classNo?.trim() ? Number(filters.classNo) : undefined;
+  const validity = filters.validity?.trim() ?? "";
+  const actionType = filters.actionType?.trim().toUpperCase() ?? "";
+
+  const studentWhere =
+    normalizedQ || classNo
+      ? {
+          ...(normalizedQ
+            ? {
+                OR: [
+                  { name: { contains: normalizedQ } },
+                  { studentNo: { contains: normalizedQ } },
+                ],
+              }
+            : {}),
+          ...(classNo ? { classNo } : {}),
+        }
+      : undefined;
+
+  const attendanceLogs = await prisma.attendanceLog.findMany({
+    where: {
+      eventId: event.id,
+      ...(actionType
+        ? {
+            actionType: actionType as ActionType,
+          }
+        : {}),
+      ...(validity === "VALID" ? { isValid: true } : {}),
+      ...(validity === "INVALID" ? { isValid: false } : {}),
+      ...(studentWhere ? { student: studentWhere } : {}),
+    },
+    include: {
+      student: true,
+      operator: true,
+    },
+    orderBy: { scannedAt: "desc" },
+    take: 150,
+  });
+
+  const manualAdjustments = await prisma.manualAdjustment.findMany({
+    where: {
+      eventId: event.id,
+      ...(actionType
+        ? {
+            actionType: actionType as ActionType,
+          }
+        : {}),
+      ...(studentWhere ? { student: studentWhere } : {}),
+    },
+    include: {
+      student: true,
+      operator: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 80,
+  });
+
+  const qrIssues = await prisma.qrIssueLog.findMany({
+    where: {
+      ...(studentWhere ? { student: studentWhere } : {}),
+    },
+    include: {
+      student: true,
+      operator: true,
+    },
+    orderBy: { issuedAt: "desc" },
+    take: 80,
+  });
+
+  return {
+    event,
+    attendanceLogs,
+    manualAdjustments,
+    qrIssues,
+  };
 }

@@ -1,6 +1,13 @@
-import { ActionType, AdminRole, FinalStatus, PrismaClient } from "@prisma/client";
+import { prisma } from "../src/lib/prisma";
+import { createStudentQrToken } from "../src/lib/student-token";
 
-const prisma = new PrismaClient();
+type SeedStudent = {
+  id: string;
+  studentNo: string;
+  qrToken: string;
+  qrVersion: number;
+  qrIssuedAt: Date;
+};
 
 function makeDate(hour: number, minute: number) {
   const base = new Date();
@@ -16,6 +23,7 @@ function makeDate(hour: number, minute: number) {
 }
 
 async function main() {
+  await prisma.qrIssueLog.deleteMany();
   await prisma.manualAdjustment.deleteMany();
   await prisma.attendanceLog.deleteMany();
   await prisma.attendanceStatus.deleteMany();
@@ -40,7 +48,7 @@ async function main() {
       data: {
         name: "운영 관리자",
         email: "admin@school.local",
-        role: AdminRole.ADMIN,
+        role: "ADMIN",
         deviceLabel: "관리자 노트북",
       },
     }),
@@ -48,7 +56,7 @@ async function main() {
       data: {
         name: "체육 교사",
         email: "teacher1@school.local",
-        role: AdminRole.TEACHER,
+        role: "TEACHER",
         deviceLabel: "입구 A",
       },
     }),
@@ -56,13 +64,13 @@ async function main() {
       data: {
         name: "담임 교사",
         email: "teacher2@school.local",
-        role: AdminRole.TEACHER,
+        role: "TEACHER",
         deviceLabel: "출구 B",
       },
     }),
   ]);
 
-  const students = await Promise.all(
+  const students: SeedStudent[] = await Promise.all(
     Array.from({ length: 18 }, (_, index) => {
       const seq = index + 1;
       const classNo = seq <= 9 ? 3 : 4;
@@ -74,21 +82,31 @@ async function main() {
           name: `학생${String(seq).padStart(2, "0")}`,
           grade: 2,
           classNo,
-          qrToken: `OY26-${classNo}-${String(seq).padStart(2, "0")}-${Math.random()
-            .toString(36)
-            .slice(2, 8)
-            .toUpperCase()}`,
+          qrToken: createStudentQrToken(studentNo, 1),
+          qrVersion: 1,
+          qrIssuedAt: new Date(),
           photoUrl: `https://placehold.co/96x96?text=S${seq}`,
         },
       });
     }),
   );
 
+  await prisma.qrIssueLog.createMany({
+    data: students.map((student: SeedStudent) => ({
+      studentId: student.id,
+      qrToken: student.qrToken,
+      qrVersion: student.qrVersion,
+      reason: "초기 발급",
+      operatorId: admins[0].id,
+      issuedAt: student.qrIssuedAt,
+    })),
+  });
+
   await prisma.attendanceStatus.createMany({
-    data: students.map((student) => ({
+    data: students.map((student: SeedStudent) => ({
       eventId: event.id,
       studentId: student.id,
-      finalStatus: FinalStatus.ABSENT,
+      finalStatus: "ABSENT",
     })),
   });
 
@@ -99,7 +117,7 @@ async function main() {
       data: {
         eventId: event.id,
         studentId: student.id,
-        actionType: ActionType.CHECKIN,
+        actionType: "CHECKIN",
         scannedAt,
         deviceId: "gate-a-01",
         operatorId: admins[1].id,
@@ -116,7 +134,7 @@ async function main() {
       data: {
         eventId: event.id,
         studentId: student.id,
-        actionType: ActionType.CHECKOUT,
+        actionType: "CHECKOUT",
         scannedAt,
         deviceId: "gate-b-01",
         operatorId: admins[2].id,
@@ -129,11 +147,11 @@ async function main() {
   await prisma.attendanceStatus.updateMany({
     where: {
       eventId: event.id,
-      studentId: { in: sampleCheckins.map((student) => student.id) },
+      studentId: { in: sampleCheckins.map((student: SeedStudent) => student.id) },
     },
     data: {
       firstCheckinAt: makeDate(7, 45),
-      finalStatus: FinalStatus.MISSING_CHECKOUT,
+      finalStatus: "MISSING_CHECKOUT",
     },
   });
 
@@ -145,12 +163,12 @@ async function main() {
           studentId: student.id,
         },
       },
-      data: {
-        firstCheckinAt: makeDate(7, 45),
-        firstCheckoutAt: makeDate(8, 24),
-        finalStatus: FinalStatus.COMPLETED,
-      },
-    });
+        data: {
+          firstCheckinAt: makeDate(7, 45),
+          firstCheckoutAt: makeDate(8, 24),
+          finalStatus: "COMPLETED",
+        },
+      });
   }
 }
 
