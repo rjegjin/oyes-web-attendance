@@ -6,6 +6,8 @@ import { formatTime } from "@/lib/time";
 
 export default async function CheckInPage() {
   const [event, logs] = await Promise.all([getTodayEvent(), getRecentScanLogs("checkin", 10)]);
+  const deviceId = process.env.TEACHER_CHECKIN_DEVICE_ID || "gate-a-01";
+  const operatorEmail = process.env.TEACHER_CHECKIN_OPERATOR_EMAIL || "teacher1@school.local";
 
   return (
     <main className="shell">
@@ -24,8 +26,8 @@ export default async function CheckInPage() {
               ? `허용 시간: ${formatTime(event.checkinStartAt)} - ${formatTime(event.checkinEndAt)}`
               : "활성 행사 없음"
           }
-          deviceId="gate-a-01"
-          operatorEmail="teacher1@school.local"
+          deviceId={deviceId}
+          operatorEmail={operatorEmail}
         />
         <RecentScanFeed eyebrow="입장 현황" title="최근 체크인 로그" logs={logs} />
       </section>

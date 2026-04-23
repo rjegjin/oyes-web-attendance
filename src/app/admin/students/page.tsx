@@ -44,11 +44,10 @@ export default async function StudentsPage({
         </div>
         <p className="muted">
           학교에서 받은 학급 명단 CSV 또는 엑셀에서 저장한 CSV를 업로드합니다. 헤더는 `학번`, `이름`,
-          `학년`, `반`이 필수이고 `사진URL`은 선택입니다.
+          `성별`이 필수이고 `사진URL`은 선택입니다.
         </p>
         <p className="muted">
-          권장 입력원은 교무실 학생 명단 또는 NEIS/행정시스템에서 내린 표입니다. 엑셀 원본은 먼저 CSV로
-          저장한 뒤 업로드합니다.
+          학년과 반은 학번에서 자동 추출합니다. 엑셀 원본은 먼저 CSV로 저장한 뒤 업로드합니다.
         </p>
 
         {params.message ? (
@@ -91,13 +90,13 @@ export default async function StudentsPage({
             <textarea
               name="csvText"
               rows={8}
-              placeholder="학번,이름,학년,반&#10;2026301,홍길동,2,3"
+              placeholder="학번,이름,성별,사진URL&#10;20301,홍길동,남,&#10;20302,김민지,여,"
             />
           </label>
           <div className="panel-muted">
-            <p>필수 헤더: `학번`, `이름`, `학년`, `반`</p>
+            <p>필수 헤더: `학번`, `이름`, `성별`</p>
             <p>선택 헤더: `사진URL`</p>
-            <p>중복 학번, 빈 값, 잘못된 학년/반은 자동으로 건너뜁니다.</p>
+            <p>학년/반은 학번에서 자동 계산되며, 중복 학번과 빈 값은 자동으로 건너뜁니다.</p>
           </div>
           <div className="button-row">
             <button className="primary-button" type="submit">

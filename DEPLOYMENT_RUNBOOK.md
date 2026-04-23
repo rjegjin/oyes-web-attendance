@@ -33,6 +33,10 @@ ADMIN_USERNAME="admin"
 ADMIN_PASSWORD="strong-admin-password"
 TEACHER_USERNAME="teacher"
 TEACHER_PASSWORD="strong-teacher-password"
+TEACHER_CHECKIN_OPERATOR_EMAIL="teacher1@school.local"
+TEACHER_CHECKIN_DEVICE_ID="gate-a-01"
+TEACHER_CHECKOUT_OPERATOR_EMAIL="teacher2@school.local"
+TEACHER_CHECKOUT_DEVICE_ID="gate-b-01"
 QR_TOKEN_SECRET="school-specific-secret"
 ```
 
@@ -40,6 +44,7 @@ QR_TOKEN_SECRET="school-specific-secret"
 
 - `QR_TOKEN_SECRET` 은 학교마다 다르게 둔다.
 - 운영 비밀번호는 기본값을 절대 그대로 쓰지 않는다.
+- 교사 스캔용 운영자 이메일과 기기 ID는 실제 현장 배치와 일치시킨다.
 - 배포 플랫폼의 Secret 관리 기능을 사용한다.
 
 ## 3. 로컬 PostgreSQL 실행
@@ -83,6 +88,7 @@ npm run db:down
 3. 운영 환경 변수 등록
 4. 도메인 또는 내부 접속 URL 확정
 5. 관리자/교사 계정 비밀번호 확정
+6. 체크인/체크아웃 기기별 운영자 이메일과 기기 ID 확정
 
 ## 4-2. 최초 배포
 

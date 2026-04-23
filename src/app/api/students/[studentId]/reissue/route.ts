@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createStudentQrToken } from "@/lib/student-token";
-import { Prisma } from "@prisma/client";
 
 type RouteContext = {
   params: Promise<{ studentId: string }>;
