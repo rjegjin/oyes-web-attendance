@@ -1,7 +1,7 @@
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
 import path from "node:path";
-import { PassThrough, Readable } from "node:stream";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -73,66 +73,79 @@ function drawStudentCard(doc: PDFKit.PDFDocument, student: PdfStudent, x: number
 }
 
 export async function GET() {
-  const students = await prisma.student.findMany({
-    where: { isActive: true },
-    select: {
-      studentNo: true,
-      name: true,
-      grade: true,
-      classNo: true,
-      qrToken: true,
-    },
-    orderBy: [{ grade: "asc" }, { classNo: "asc" }, { studentNo: "asc" }],
-  });
+  try {
+    const students = await prisma.student.findMany({
+      where: { isActive: true },
+      select: {
+        studentNo: true,
+        name: true,
+        grade: true,
+        classNo: true,
+        qrToken: true,
+      },
+      orderBy: [{ grade: "asc" }, { classNo: "asc" }, { studentNo: "asc" }],
+    });
 
-  const doc = new PDFDocument({
-    size: "A4",
-    margin: 28,
-    bufferPages: false,
-    info: {
-      Title: "OYES Student QR Codes",
-      Author: "OYES Attendance",
-    },
-  });
-  const fontPath = path.join(process.cwd(), "public", "fonts", "DroidSansFallbackFull.ttf");
-  doc.registerFont("Korean", fontPath);
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 28,
+      bufferPages: false,
+      info: {
+        Title: "OYES Student QR Codes",
+        Author: "OYES Attendance",
+      },
+    });
+    const fontPath = path.join(process.cwd(), "public", "fonts", "DroidSansFallbackFull.ttf");
+    doc.registerFont("Korean", fontPath);
 
-  const output = new PassThrough();
-  doc.pipe(output);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        doc.on("data", (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
+        doc.on("end", () => controller.close());
+        doc.on("error", (error) => controller.error(error));
+      },
+    });
 
-  const columns = 3;
-  const rows = 5;
-  const gap = 8;
-  const pageWidth = doc.page.width;
-  const pageHeight = doc.page.height;
-  const margin = 28;
-  const cardWidth = (pageWidth - margin * 2 - gap * (columns - 1)) / columns;
-  const cardHeight = (pageHeight - margin * 2 - gap * (rows - 1)) / rows;
+    const columns = 3;
+    const rows = 5;
+    const gap = 8;
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const margin = 28;
+    const cardWidth = (pageWidth - margin * 2 - gap * (columns - 1)) / columns;
+    const cardHeight = (pageHeight - margin * 2 - gap * (rows - 1)) / rows;
 
-  students.forEach((student, index) => {
-    if (index > 0 && index % (columns * rows) === 0) {
-      doc.addPage();
+    for (const [index, student] of students.entries()) {
+      if (index > 0 && index % (columns * rows) === 0) {
+        doc.addPage();
+      }
+
+      const pageIndex = index % (columns * rows);
+      const col = pageIndex % columns;
+      const row = Math.floor(pageIndex / columns);
+      const x = margin + col * (cardWidth + gap);
+      const y = margin + row * (cardHeight + gap);
+
+      drawStudentCard(doc, student, x, y, cardWidth, cardHeight);
     }
 
-    const pageIndex = index % (columns * rows);
-    const col = pageIndex % columns;
-    const row = Math.floor(pageIndex / columns);
-    const x = margin + col * (cardWidth + gap);
-    const y = margin + row * (cardHeight + gap);
+    doc.end();
 
-    drawStudentCard(doc, student, x, y, cardWidth, cardHeight);
-  });
-
-  doc.end();
-
-  const body = Readable.toWeb(output) as unknown as BodyInit;
-
-  return new Response(body, {
-    status: 200,
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="oyes-student-qr-${new Date().toISOString().slice(0, 10)}.pdf"`,
-      "Cache-Control": "private, no-store",
-    },
-  });
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="oyes-student-qr-${new Date().toISOString().slice(0, 10)}.pdf"`,
+        "Cache-Control": "private, no-store",
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: error instanceof Error ? error.message : "전체 QR 다운로드 실패",
+      },
+      { status: 500 },
+    );
+  }
 }
