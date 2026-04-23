@@ -74,6 +74,13 @@ a {
   text-decoration: none;
 }
 
+.text-link {
+  color: var(--brand-strong);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 button,
 input,
 select,

@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDashboardSnapshot, FinalStatus } from "@/lib/attendance";
 import { buildCsv } from "@/lib/csv";
-import { matchesStudentFilter, type DashboardFilters } from "@/lib/attendance-report";
+import type { DashboardFilters } from "@/lib/attendance-report";
 
 export async function GET(request: NextRequest) {
-  const snapshot = await getDashboardSnapshot();
-
-  if (!snapshot) {
-    return NextResponse.json({ ok: false, message: "활성화된 행사가 없습니다." }, { status: 404 });
-  }
-
   const url = new URL(request.url);
   const filters: DashboardFilters = {
     q: url.searchParams.get("q") ?? "",
@@ -17,9 +11,13 @@ export async function GET(request: NextRequest) {
     classNo: url.searchParams.get("classNo") ?? "",
     status: url.searchParams.get("status") ?? "",
   };
+  const snapshot = await getDashboardSnapshot(filters);
+
+  if (!snapshot) {
+    return NextResponse.json({ ok: false, message: "활성화된 행사가 없습니다." }, { status: 404 });
+  }
 
   const rows = snapshot.statuses
-    .filter((status: (typeof snapshot.statuses)[number]) => matchesStudentFilter(status.student, status.finalStatus, filters))
     .map((status: (typeof snapshot.statuses)[number]) => [
       snapshot.event.title,
       status.student.studentNo,

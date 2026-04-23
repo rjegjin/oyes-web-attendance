@@ -76,6 +76,7 @@ export default async function QRPrintPage({
         <Link href="/">대시보드</Link>
         <Link href="/admin/manual">수동 처리</Link>
         <Link href="/admin/students">명단 업로드</Link>
+        <Link href="/api/export/qr-pdf">전체 QR PDF 다운로드</Link>
       </div>
 
       <section className="panel print-hidden">
@@ -93,6 +94,10 @@ export default async function QRPrintPage({
         <p className="muted">
           기본 상태에서는 전체 1300여 명을 불러오지 않습니다. 학년과 반을 선택하거나, 이름/학번으로
           검색해서 필요한 학생만 여세요.
+        </p>
+        <p className="muted">
+          전교생 QR을 한 번에 인쇄할 때는 <Link className="text-link" href="/api/export/qr-pdf">전체 QR PDF 다운로드</Link>를
+          사용하세요. 화면에 미리 띄우지 않고 파일로 바로 내려받습니다.
         </p>
 
         {params.message ? (

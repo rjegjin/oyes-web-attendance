@@ -2,7 +2,7 @@ import Link from "next/link";
 import { DashboardCard } from "@/components/dashboard-card";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { getDashboardSnapshot, FinalStatus } from "@/lib/attendance";
-import { matchesStudentFilter, type DashboardFilters } from "@/lib/attendance-report";
+import type { DashboardFilters } from "@/lib/attendance-report";
 import { formatDate, formatTime } from "@/lib/time";
 
 const statusLabel: Record<FinalStatus, string> = {
@@ -33,7 +33,7 @@ export default async function HomePage({
   searchParams?: Promise<DashboardFilters | undefined>;
 }) {
   const filters: DashboardFilters = (await searchParams) ?? {};
-  const snapshot = await getDashboardSnapshot();
+  const snapshot = await getDashboardSnapshot(filters, STATUS_DISPLAY_LIMIT);
 
   if (!snapshot) {
     return (
@@ -49,20 +49,9 @@ export default async function HomePage({
     );
   }
 
-  const { event, statuses, recentLogs, metrics } = snapshot;
-  const filteredStatuses = statuses.filter((status) =>
-    matchesStudentFilter(status.student, status.finalStatus, filters),
-  );
-  const displayedStatuses = filteredStatuses.slice(0, STATUS_DISPLAY_LIMIT);
-  const statusByStudentId = new Map(statuses.map((status: (typeof statuses)[number]) => [status.studentId, status]));
-  const filteredLogs = recentLogs.filter((log: (typeof recentLogs)[number]) => {
-    if (!log.student) {
-      return !filters.q && !filters.grade && !filters.classNo && !filters.status;
-    }
-
-    const status = statusByStudentId.get(log.student.id)?.finalStatus ?? FinalStatus.PENDING;
-    return matchesStudentFilter(log.student, status, filters);
-  });
+  const { event, statuses, statusCount, recentLogs, metrics } = snapshot;
+  const displayedStatuses = statuses;
+  const filteredLogs = recentLogs;
   const exportHref = `/api/export/attendance${buildQuery(filters)}`;
   const completionRate = metrics.targetCount > 0 ? Math.round((metrics.completedCount / metrics.targetCount) * 100) : 0;
   const attentionCount = metrics.missingCheckinCount + metrics.missingCheckoutCount;
@@ -115,6 +104,9 @@ export default async function HomePage({
             </Link>
             <Link className="secondary-button" href="/admin/manual">
               예외 처리
+            </Link>
+            <Link className="secondary-button" href="/admin/qr">
+              QR 인쇄
             </Link>
             <Link className="secondary-button" href={exportHref}>
               CSV 다운로드
@@ -190,7 +182,7 @@ export default async function HomePage({
               <p className="eyebrow">실시간 상태</p>
               <h2>학생별 진행 현황</h2>
               <p className="muted">
-                필터 결과 {filteredStatuses.length}명 중 {displayedStatuses.length}명 표시
+                필터 결과 {statusCount}명 중 {displayedStatuses.length}명 표시
               </p>
             </div>
           </div>
@@ -226,7 +218,7 @@ export default async function HomePage({
               </tbody>
             </table>
           </div>
-          {filteredStatuses.length > STATUS_DISPLAY_LIMIT ? (
+          {statusCount > STATUS_DISPLAY_LIMIT ? (
             <p className="muted table-note">
               전체 명단을 모두 펼치지 않습니다. 학년/반/상태 필터로 좁히거나 CSV 다운로드로 전체 결과를 확인하세요.
             </p>

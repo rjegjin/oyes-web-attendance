@@ -36,7 +36,7 @@ async function main() {
       title: "오예스 아침 운동",
       eventDate: makeDate(0, 0),
       checkinStartAt: makeDate(7, 40),
-      checkinEndAt: makeDate(7, 59),
+      checkinEndAt: makeDate(8, 0),
       checkoutStartAt: makeDate(8, 20),
       checkoutEndAt: makeDate(8, 40),
       isActive: true,

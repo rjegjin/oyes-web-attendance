@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import type { DashboardFilters } from "@/lib/attendance-report";
 
 export const ActionType = {
   CHECKIN: "CHECKIN",
@@ -326,46 +327,83 @@ function resolveScannedAt(capturedAt: Date | undefined, fallback: Date) {
   return capturedAt;
 }
 
-export async function getDashboardSnapshot() {
+function buildDashboardStudentWhere(filters: DashboardFilters): Prisma.StudentWhereInput {
+  const normalizedQ = filters.q?.trim() ?? "";
+  const grade = filters.grade?.trim() ? Number(filters.grade) : undefined;
+  const classNo = filters.classNo?.trim() ? Number(filters.classNo) : undefined;
+
+  return {
+    isActive: true,
+    ...(normalizedQ
+      ? {
+          OR: [
+            { name: { contains: normalizedQ } },
+            { studentNo: { contains: normalizedQ } },
+          ],
+        }
+      : {}),
+    ...(grade ? { grade } : {}),
+    ...(classNo ? { classNo } : {}),
+  };
+}
+
+function hasDashboardStudentFilter(filters: DashboardFilters) {
+  return Boolean(filters.q?.trim() || filters.grade?.trim() || filters.classNo?.trim());
+}
+
+function buildDashboardStatusWhere(eventId: string, filters: DashboardFilters): Prisma.AttendanceStatusWhereInput {
+  const status = filters.status?.trim().toUpperCase();
+
+  return {
+    eventId,
+    ...(status ? { finalStatus: status as FinalStatus } : {}),
+    student: buildDashboardStudentWhere(filters),
+  };
+}
+
+export async function getDashboardSnapshot(filters: DashboardFilters = {}, statusLimit?: number) {
   const event = await getTodayEvent();
 
   if (!event) {
     return null;
   }
 
-  // 1. 활성 학생 목록과 현재 이벤트의 상태 목록을 가져옵니다.
-  const students = await prisma.student.findMany({
-    where: { isActive: true },
-    orderBy: [{ grade: "asc" }, { classNo: "asc" }, { name: "asc" }],
-  });
-  
-  const existingStatuses = await prisma.attendanceStatus.findMany({
-    where: { eventId: event.id },
-    select: { studentId: true },
-  });
+  const studentWhere = buildDashboardStudentWhere(filters);
+  const shouldFilterLogsByStudent = hasDashboardStudentFilter(filters);
+  const statusWhere = buildDashboardStatusWhere(event.id, filters);
 
-  // 2. 누락된 상태 레코드가 있다면 ABSENT로 자동 초기화합니다.
-  const existingIds = new Set(existingStatuses.map((s) => s.studentId));
-  const missingStudents = students.filter((s) => !existingIds.has(s.id));
-
-  if (missingStudents.length > 0) {
-    await prisma.attendanceStatus.createMany({
-      data: missingStudents.map((s) => ({
+  const [
+    targetCount,
+    checkinCount,
+    checkoutCount,
+    completedCount,
+    missingCheckoutCount,
+    filteredStatusCount,
+    statuses,
+    recentLogs,
+  ] = await Promise.all([
+    prisma.student.count({ where: { isActive: true } }),
+    prisma.attendanceStatus.count({ where: { eventId: event.id, firstCheckinAt: { not: null } } }),
+    prisma.attendanceStatus.count({ where: { eventId: event.id, firstCheckoutAt: { not: null } } }),
+    prisma.attendanceStatus.count({
+      where: {
         eventId: event.id,
-        studentId: s.id,
-        finalStatus: FinalStatus.ABSENT,
-      })),
-    });
-  }
-
-  const [statuses, recentLogs] = await Promise.all([
+        finalStatus: { in: [FinalStatus.COMPLETED, FinalStatus.MANUAL_COMPLETED] },
+      },
+    }),
+    prisma.attendanceStatus.count({ where: { eventId: event.id, finalStatus: FinalStatus.MISSING_CHECKOUT } }),
+    prisma.attendanceStatus.count({ where: statusWhere }),
     prisma.attendanceStatus.findMany({
-      where: { eventId: event.id },
+      where: statusWhere,
       include: { student: true },
       orderBy: [{ student: { grade: "asc" } }, { student: { classNo: "asc" } }, { student: { name: "asc" } }],
+      ...(statusLimit ? { take: statusLimit } : {}),
     }),
     prisma.attendanceLog.findMany({
-      where: { eventId: event.id },
+      where: {
+        eventId: event.id,
+        ...(shouldFilterLogsByStudent ? { student: studentWhere } : {}),
+      },
       include: { student: true, operator: true },
       orderBy: { scannedAt: "desc" },
       take: 30,
@@ -373,19 +411,15 @@ export async function getDashboardSnapshot() {
   ]);
 
   const metrics = {
-    targetCount: students.length,
-    checkinCount: statuses.filter((item) => item.firstCheckinAt).length,
-    checkoutCount: statuses.filter((item) => item.firstCheckoutAt).length,
-    completedCount: statuses.filter((item) =>
-      item.finalStatus === FinalStatus.COMPLETED || item.finalStatus === FinalStatus.MANUAL_COMPLETED
-    ).length,
-    missingCheckinCount: statuses.filter((item) =>
-      item.finalStatus === FinalStatus.ABSENT || item.finalStatus === FinalStatus.CHECKOUT_ONLY || item.finalStatus === FinalStatus.MISSING_CHECKIN
-    ).length,
-    missingCheckoutCount: statuses.filter((item) => item.finalStatus === FinalStatus.MISSING_CHECKOUT).length,
+    targetCount,
+    checkinCount,
+    checkoutCount,
+    completedCount,
+    missingCheckinCount: Math.max(targetCount - checkinCount, 0),
+    missingCheckoutCount,
   };
 
-  return { event, students, statuses, recentLogs, metrics };
+  return { event, statuses, statusCount: filteredStatusCount, recentLogs, metrics };
 }
 
 export async function getRecentScanLogs(action: ScanAction, limit = 8) {
