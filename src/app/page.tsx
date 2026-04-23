@@ -66,12 +66,17 @@ export default async function HomePage({
       <AutoRefresh interval={5000} />
       <section className="hero">
         <div>
-          <p className="eyebrow">Local Deployment Architecture</p>
+          <p className="eyebrow">Event Control Room</p>
           <h1>오예스 출결 웹 시스템</h1>
           <p className="muted">
-            로컬에서는 Next.js 앱 한 대로 구동하고, 배포 시에는 앱 서버와 PostgreSQL을 각각 Vercel,
-            Supabase로 분리하는 구조를 전제로 구성했습니다.
+            행사 당일 체크인, 체크아웃, 예외 처리, QR 재발급, 로그 추적까지 한 화면 흐름으로 운영할 수
+            있도록 정리한 출결 대시보드입니다.
           </p>
+          <div className="badge-row hero-badges">
+            <span className="badge">실시간 현황 반영</span>
+            <span className="badge">QR 스캔 운영</span>
+            <span className="badge">운영 로그 추적</span>
+          </div>
         </div>
         <div className="hero-actions">
           <Link className="primary-button" href="/teacher/check-in">
