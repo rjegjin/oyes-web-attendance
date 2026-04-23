@@ -4,6 +4,8 @@ import { ScanPanel } from "@/components/scan-panel";
 import { getRecentScanLogs, getTodayEvent } from "@/lib/attendance";
 import { formatTime } from "@/lib/time";
 
+export const dynamic = "force-dynamic";
+
 export default async function CheckInPage() {
   const [event, logs] = await Promise.all([getTodayEvent(), getRecentScanLogs("checkin", 10)]);
   const deviceId = process.env.TEACHER_CHECKIN_DEVICE_ID || "gate-a-01";
