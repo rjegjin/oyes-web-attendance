@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
           create: {
             studentNo: row.studentNo,
             name: row.name,
+            gender: row.gender,
             grade: row.grade,
             classNo: row.classNo,
             photoUrl: row.photoUrl ?? null,
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
           },
           update: {
             name: row.name,
+            gender: row.gender,
             grade: row.grade,
             classNo: row.classNo,
             photoUrl: row.photoUrl ?? null,

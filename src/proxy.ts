@@ -50,6 +50,7 @@ export function proxy(req: NextRequest) {
   };
 
   if (
+    url.pathname === "/" ||
     url.pathname.startsWith("/admin") ||
     url.pathname.startsWith("/api/manual") ||
     url.pathname.startsWith("/api/students") ||
@@ -85,6 +86,7 @@ export function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/",
     "/admin/:path*",
     "/teacher/:path*",
     "/api/scan/:path*",

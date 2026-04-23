@@ -37,6 +37,7 @@ model Student {
   id           String             @id @default(cuid())
   studentNo    String             @unique
   name         String
+  gender       String?
   grade        Int
   classNo      Int
   photoUrl     String?
